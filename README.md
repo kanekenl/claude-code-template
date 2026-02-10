@@ -1,4 +1,4 @@
-# claude-template
+# claude-code-template
 
 Claude（/plan→/tdd）運用を前提にした、Issue/PR/Plan管理のテンプレートです。
 
