@@ -1,0 +1,72 @@
+name: Move plan to finished on merge (develop)
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [develop]
+
+jobs:
+  move-plan:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: develop
+
+      - name: Extract plans path from PR body
+        id: extract
+        run: |
+          BODY=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")
+
+          # PR本文の "Plan: docs/plans/xxx.md" を抽出
+          PLAN_PATH=$(printf "%s\n" "$BODY" | sed -n 's/^Plan:[[:space:]]*//p' | head -n 1)
+
+          if [ -z "$PLAN_PATH" ]; then
+            echo "No 'Plan:' line found in PR body. Skipping."
+            echo "plan_path=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "plan_path=$PLAN_PATH" >> $GITHUB_OUTPUT
+          echo "Detected plan_path=$PLAN_PATH"
+
+      - name: Move plan file to finished
+        if: steps.extract.outputs.plan_path != ''
+        env:
+          SRC: ${{ steps.extract.outputs.plan_path }}
+        run: |
+          set -euo pipefail
+
+          # パストラバーサル防止: docs/plans/ 配下の .md ファイルのみ許可
+          if [[ ! "$SRC" =~ ^docs/plans/[a-zA-Z0-9._-]+\.md$ ]]; then
+            echo "Invalid plan path: $SRC"
+            exit 1
+          fi
+
+          if [[ "$SRC" == docs/plans/* ]]; then
+            REL="${SRC#docs/plans/}"
+            DEST="docs/plans/finished/$REL"
+          else
+            DEST="docs/plans/finished/$(basename "$SRC")"
+          fi
+
+          mkdir -p "$(dirname "$DEST")"
+
+          if [ ! -f "$SRC" ]; then
+            echo "Plan file not found: $SRC"
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git mv "$SRC" "$DEST"
+          git commit -m "docs: move plan to finished ($(basename "$DEST"))"
+          git push origin develop

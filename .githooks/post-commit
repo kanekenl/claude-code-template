@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# 最初のコミット後に draft PR を自動作成（既存PRがあれば何もしない）
+# NOTE: 失敗してもコミット自体は成功させたいので、常に exit 0 を返す
+set -u
+
+{
+  command -v git >/dev/null 2>&1 || exit 0
+  command -v gh >/dev/null 2>&1 || exit 0
+
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+  cd "$repo_root" || exit 0
+
+  branch="$(git branch --show-current 2>/dev/null || true)"
+  [[ -n "$branch" ]] || exit 0
+  [[ "$branch" =~ ^feat/issue-[0-9]+- ]] || exit 0
+
+  # start_mode が保存した plan パスがない場合はスキップ
+  plan_path="$(git config --local --get branch."$branch".tddPlanPath 2>/dev/null || true)"
+  [[ -n "$plan_path" ]] || exit 0
+
+  # 既にPRがあるなら何もしない（毎コミットで本文を上書きしない）
+  if gh pr view "$branch" --json number --jq .number >/dev/null 2>&1; then
+    exit 0
+  fi
+
+  # PR作成には push が必要。tddスクリプト側で upstream 未設定なら -u push も行う。
+  scripts/tdd_from_plan.sh open-pr --draft --no-edit-existing >/dev/null 2>&1 || true
+} || true
+
+exit 0
